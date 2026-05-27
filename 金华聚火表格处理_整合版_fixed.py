@@ -922,7 +922,7 @@ def compute_detail_stats(input_dir):
     from collections import defaultdict
     stats = defaultdict(int)
     if not os.path.exists(input_dir):
-        return [], 0, 46, 36, 10
+        return [], 0, 46, 36, 10, []
     for filename in os.listdir(input_dir):
         if not (filename.endswith('.xls') or filename.endswith('.xlsx')):
             continue
@@ -960,7 +960,7 @@ def compute_detail_stats(input_dir):
                 continue
             stats[(name.strip(), spec.strip(), unit.strip())] += qty
     if not stats:
-        return [], 0, 46, 36, 10
+        return [], 0, 46, 36, 10, []
     items = sorted(stats.items(), key=lambda x: x[0][0])
     total_qty = sum(v for _, v in items)
     W_NAME, W_SPEC, W_UNIT = 46, 36, 10
@@ -976,7 +976,8 @@ def compute_detail_stats(input_dir):
         lines.append(
             f"  {_pad(name, W_NAME)}{_pad(spec, W_SPEC)}{_pad(unit, W_UNIT)}{qty:>6}"
         )
-    return lines, total_qty, W_NAME, W_SPEC, W_UNIT
+    raw_items = [(k[0], k[1], k[2], v) for k, v in items]
+    return lines, total_qty, W_NAME, W_SPEC, W_UNIT, raw_items
 
 
 def count_total_products(detail_dir):
@@ -1166,7 +1167,6 @@ class PrintToWidget:
         self.text.config(state=tk.NORMAL)
         self.text.insert(tk.END, s)
         self.text.see(tk.END)
-        self.text.config(state=tk.DISABLED)
     def flush(self):
         pass
 
@@ -1197,8 +1197,10 @@ class JinhuaJuhuoApp:
         self.is_running = False
         self.is_loaded = False  # pandas 后台加载状态
         self.result_message = ""  # 成功后的结果消息（含警告）
+        self.output_file_path = ""  # 生成的文件路径
         self.detail_stats_lines = None  # 商品明细统计格式化的行
         self.detail_stats_widths = (24, 14, 8)
+        self.detail_stats_raw = []
         self.detail_stats_total = 0
         self.delete_files_var = tk.BooleanVar(value=True)
         self.show_detail_stats_var = tk.BooleanVar(value=True)
@@ -1338,7 +1340,11 @@ class JinhuaJuhuoApp:
         self.result_text.tag_config("red", foreground="#e74c3c", font=("Microsoft YaHei", 11, "bold"))
         self.result_text.tag_config("head", font=("Microsoft YaHei", 11, "bold"))
         self.result_text.tag_config("stripe", background="#f5f5f5")
-        self.result_text.pack(pady=(0, 10), fill=tk.BOTH, expand=True, padx=10)
+        self.result_text.tag_config("link", foreground="#2980b9", underline=True)
+        self.result_text.bind("<Key>", lambda e: "break")
+        self.result_text.pack(pady=(0, 2), fill=tk.BOTH, expand=True, padx=10)
+
+
 
         # 状态标签
         self.status_label = tk.Label(
@@ -1384,9 +1390,12 @@ class JinhuaJuhuoApp:
         self.execute_button.config(state=tk.DISABLED, text="执行中...")
         self.delete_checkbox.config(state=tk.DISABLED)
         self.detail_stats_checkbox.config(state=tk.DISABLED)
+        self.output_file_path = ""
+        if hasattr(self, '_btn_row'):
+            self._btn_row.destroy()
+        self.execute_button.pack()
         self.result_text.config(state=tk.NORMAL)
         self.result_text.delete("1.0", tk.END)
-        self.result_text.config(state=tk.DISABLED)
         # 重定向 print 到结果窗口
         self._old_stdout = sys.stdout
         sys.stdout = PrintToWidget(self.result_text)
@@ -1429,14 +1438,21 @@ class JinhuaJuhuoApp:
                 return
 
             self.result_message = message2  # 保存成功消息（含警告）
+            # 提取输出文件路径
+            for line in message2.split('\n'):
+                if line.startswith('生成文件:'):
+                    fname = line.split('生成文件:', 1)[-1].strip()
+                    self.output_file_path = os.path.join(r'D:\订单表格', fname)
+                    break
             # 商品明细统计（读取原始目录，在删除前）
             if self.show_detail_stats_var.get():
                 self.update_progress(72, "正在统计商品明细...", "72%")
-                detail_lines, detail_total, w_name, w_spec, w_unit = compute_detail_stats(r'D:\明细表格')
+                detail_lines, detail_total, w_name, w_spec, w_unit, raw_items = compute_detail_stats(r'D:\明细表格')
                 if detail_lines:
                     self.detail_stats_lines = detail_lines
                     self.detail_stats_total = detail_total
                     self.detail_stats_widths = (w_name, w_spec, w_unit)
+                    self.detail_stats_raw = raw_items
                 else:
                     self.detail_stats_lines = None
             self.update_progress(70, "订单表格处理完成", "70%")
@@ -1518,12 +1534,17 @@ class JinhuaJuhuoApp:
         sys.stdout = getattr(self, '_old_stdout', sys.stdout)
         self.root.update()  # 处理挂起的 GUI 事件
         self.status_label.config(text="执行完毕")
-        self.execute_button.config(
-            text="关闭",
-            state=tk.NORMAL,
-            command=self.close_window,
-            bg="#e74c3c"
-        )
+        # 左右排列两个按钮
+        self.execute_button.pack_forget()
+        self._btn_row = tk.Frame(self.execute_button.master)
+        self._btn_row.pack(pady=(0, 20))
+        tk.Button(self._btn_row, text="关闭", command=self.close_window,
+                  font=("Microsoft YaHei", 14), bg="#e74c3c", fg="white",
+                  width=16, height=2).pack(side=tk.LEFT, padx=5)
+        if self.output_file_path and os.path.exists(self.output_file_path):
+            tk.Button(self._btn_row, text="📄 打开并退出", command=self._open_and_close,
+                      font=("Microsoft YaHei", 14), bg="#27ae60", fg="white",
+                      width=18, height=2).pack(side=tk.LEFT, padx=5)
         self.is_running = False
         # 左侧：结果文本
         self.result_text.config(state=tk.NORMAL)
@@ -1566,8 +1587,20 @@ class JinhuaJuhuoApp:
                 self.result_text.insert(tk.END, line + "\n")
                 self.result_text.tag_add(tag, start, tk.END + "-1c")
 
-        self.result_text.config(state=tk.DISABLED)
-    
+    def _open_and_close(self):
+        # 导出结果栏内容为 TXT
+        detail_dir = r'D:\订单表格\每日详情'
+        os.makedirs(detail_dir, exist_ok=True)
+        today = datetime.now().strftime('%m%d')
+        txt_path = os.path.join(detail_dir, f'今日详情{today}.txt')
+        content = self.result_text.get("1.0", tk.END)
+        with open(txt_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        # 打开输出文件
+        if self.output_file_path and os.path.exists(self.output_file_path):
+            os.startfile(self.output_file_path)
+        self.close_window()
+
     def close_window(self):
         """关闭窗口"""
         self.root.destroy()
@@ -1576,6 +1609,9 @@ class JinhuaJuhuoApp:
         """显示错误信息"""
         sys.stdout = getattr(self, '_old_stdout', sys.stdout)
         self.is_running = False
+        if hasattr(self, '_btn_row'):
+            self._btn_row.destroy()
+        self.execute_button.pack()
         self.execute_button.config(state=tk.NORMAL, text="执行表格转换", bg="#3498db")
         self.delete_checkbox.config(state=tk.NORMAL)
         self.detail_stats_checkbox.config(state=tk.NORMAL)
