@@ -1179,11 +1179,14 @@ class JinhuaJuhuoApp:
         self.root.resizable(False, False)
         
         # 设置窗口图标
-        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'favicon.ico')
-        if os.path.exists(icon_path):
-            self.root.iconbitmap(default=icon_path)
-        elif os.path.exists(r'D:\WFR\D2Y\favicon.ico'):
-            self.root.iconbitmap(default=r'D:\WFR\D2Y\favicon.ico')
+        for icon_path in [
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), 'favicon.ico'),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), '_internal', 'favicon.ico'),
+            r'D:\WFR\D2Y\favicon.ico'
+        ]:
+            if os.path.exists(icon_path):
+                self.root.iconbitmap(default=icon_path)
+                break
 
         # 隐藏控制台窗口（Windows特定）
         if sys.platform == "win32":

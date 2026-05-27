@@ -11,21 +11,21 @@ DefaultGroupName=金华聚火表格处理
 OutputDir=.\installer
 OutputBaseFilename=金华聚火表格处理_Setup
 SetupIconFile=.\favicon.ico
-UninstallDisplayIcon={app}\favicon.ico
+UninstallDisplayIcon={app}\_internal\favicon.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
 
 [Languages]
-Name: "chinese"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+Name: "chinese"; MessagesFile: "D:\WFR\D2Y\Default.isl"
 
 [Files]
 Source: "dist\JinhuaJuhuo\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 
 [Icons]
-Name: "{autoprograms}\金华聚火表格处理"; Filename: "{app}\JinhuaJuhuo.exe"; IconFilename: "{app}\favicon.ico"
-Name: "{autodesktop}\金华聚火表格处理"; Filename: "{app}\JinhuaJuhuo.exe"; IconFilename: "{app}\favicon.ico"; Tasks: desktopicon
+Name: "{autoprograms}\金华聚火表格处理"; Filename: "{app}\JinhuaJuhuo.exe"; IconFilename: "{app}\_internal\favicon.ico"
+Name: "{autodesktop}\金华聚火表格处理"; Filename: "{app}\JinhuaJuhuo.exe"; IconFilename: "{app}\_internal\favicon.ico"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "快捷方式:"; Flags: checkedonce
