@@ -9,6 +9,13 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 import threading
+import urllib.request
+import urllib.error
+import json
+
+CURRENT_VERSION = "1.3"
+UPDATE_API = "https://api.github.com/repos/hotakun/jinhua-table-tool/releases/latest"
+UPDATE_URL = "https://github.com/hotakun/jinhua-table-tool/releases/latest"
 import time
 import os
 import sys
@@ -28,6 +35,22 @@ class _LazyPandas:
         return getattr(_pd_mod, name)
 
 pd = _LazyPandas()
+
+
+def check_for_update(root):
+    """后台检查 GitHub 是否有新版本"""
+    try:
+        req = urllib.request.Request(UPDATE_API, headers={"User-Agent": "JinhuaJuhuo"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+        latest = data.get("tag_name", "").lstrip("v")
+        if latest and latest != CURRENT_VERSION:
+            root.after(0, lambda: messagebox.askyesno(
+                "发现新版本",
+                f"当前版本: v{CURRENT_VERSION}\n最新版本: v{latest}\n\n是否前往下载？"
+            ) and os.startfile(UPDATE_URL))
+    except:
+        pass  # 自动检查静默跳过，不打扰用户
 
 # ============================================================================
 # 处理明细表格功能（原处理明细表格.py）
@@ -961,12 +984,15 @@ def compute_detail_stats(input_dir):
             stats[(name.strip(), spec.strip(), unit.strip())] += qty
     if not stats:
         return [], 0, 46, 36, 10, []
-    items = sorted(stats.items(), key=lambda x: x[0][0])
+    items = sorted(stats.items(), key=lambda x: (x[0][2], x[0][0]))  # 单位优先，再按名称
     total_qty = sum(v for _, v in items)
     W_NAME, W_SPEC, W_UNIT = 46, 36, 10
     lines = []
+    prev_unit = None
     for (name, spec, unit), qty in items:
-        # 超过最大宽度的截断
+        if prev_unit is not None and unit != prev_unit:
+            lines.append("")
+        prev_unit = unit
         while _dwidth(name) > W_NAME:
             name = name[:-1]
         while _dwidth(spec) > W_SPEC:
@@ -1174,7 +1200,7 @@ class PrintToWidget:
 class JinhuaJuhuoApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("金华聚火表格处理")
+        self.root.title(f"金华聚火表格处理 v{CURRENT_VERSION}")
         self.root.geometry("580x720")  # 固定窗口大小
         self.root.resizable(False, False)
         
@@ -1216,6 +1242,10 @@ class JinhuaJuhuoApp:
 
         # 窗口显示后再启动后台加载（after 让窗口先渲染）
         self.root.after(50, self._preload_pandas)
+        # 启动后检查更新（延迟 2 秒，避免影响启动速度）
+        self.root.after(2000, lambda: threading.Thread(
+            target=check_for_update, args=(self.root,), daemon=True
+        ).start())
     
     def setup_ui(self):
         """设置用户界面"""
@@ -1225,11 +1255,15 @@ class JinhuaJuhuoApp:
         
         # 标题标签
         title_label = tk.Label(
-            main_frame, 
-            text="金华聚火表格处理", 
+            main_frame,
+            text=f"金华聚火表格处理 v{CURRENT_VERSION}",
             font=("Microsoft YaHei", 18, "bold"),
-            foreground="#2c3e50"
+            foreground="#2c3e50",
+            cursor="hand2"
         )
+        title_label.bind("<Double-Button-1>", lambda e: threading.Thread(
+            target=self._manual_check_update, daemon=True
+        ).start())
         title_label.pack(pady=(0, 2))
         tk.Label(main_frame,
                  text="订小易_转_优路达_表格处理",
@@ -1589,6 +1623,35 @@ class JinhuaJuhuoApp:
                 start = self.result_text.index(tk.END + "-1c")
                 self.result_text.insert(tk.END, line + "\n")
                 self.result_text.tag_add(tag, start, tk.END + "-1c")
+
+    def _manual_check_update(self):
+        """双击标题触发的手动更新检查"""
+        self.status_label.config(text="正在检查更新...")
+        try:
+            req = urllib.request.Request(UPDATE_API, headers={"User-Agent": "JinhuaJuhuo"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+            latest = data.get("tag_name", "").lstrip("v")
+            if latest and latest != CURRENT_VERSION:
+                go = messagebox.askyesno(
+                    "发现新版本",
+                    f"当前: v{CURRENT_VERSION}\n最新: v{latest}\n\n前往下载？"
+                )
+                if go:
+                    os.startfile(UPDATE_URL)
+            elif latest:
+                messagebox.showinfo("已是最新", f"当前 v{CURRENT_VERSION} 已是最新版本。")
+            else:
+                messagebox.showwarning("检查失败", "无法获取版本信息，请稍后重试。")
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                messagebox.showinfo("已是最新", f"当前 v{CURRENT_VERSION} 已是最新版本。")
+            else:
+                messagebox.showwarning("检查失败", f"HTTP {e.code}: {e.reason}")
+        except Exception as e:
+            messagebox.showwarning("检查失败", f"网络异常: {str(e)[:200]}")
+        finally:
+            self.status_label.config(text="就绪，等待执行...")
 
     def _open_and_close(self):
         # 导出结果栏内容为 TXT
